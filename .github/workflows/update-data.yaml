@@ -4,12 +4,12 @@ on:
   push:
     branches: [main]
   schedule:
+    - cron: "0 10 * * *"  # 6:00am ET during DST; 5:00am ET during EST
     - cron: "0 11 * * *"  # 7:00am ET during DST; 6:00am ET during EST
-    - cron: "0 12 * * *"  # 8:00am ET during DST; 7:00am ET during EST
   workflow_dispatch:
 
 concurrency:
-  group: run-gas-prices
+  group: run-oil-prices
   cancel-in-progress: true
 
 permissions:
@@ -19,7 +19,6 @@ jobs:
   run-scripts:
     runs-on: ubuntu-latest
     env:
-      EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
       DW_API_KEY: ${{ secrets.DW_API_KEY }}
     steps:
       - name: Check out repository
@@ -42,25 +41,19 @@ jobs:
             any::xml2
             any::jsonlite
             any::stringr
-            any::rvest
             any::lubridate
             any::readr
+            any::httr2
+            any::jsonlite
             github::munichrocker/DatawRappr
           cache-version: 2
 
       - name: Set up environment variables
         run: |
-          echo "EIA_API_KEY=${{ secrets.EIA_API_KEY }}" >> $GITHUB_ENV
           echo "DW_API_KEY=${{ secrets.DW_API_KEY }}" >> $GITHUB_ENV
 
-      - name: Run collect script
-        run: Rscript -e 'source("scripts/collect_gas_price_data.R")'
-
-      - name: Run AAA script
-        run: Rscript -e 'source("scripts/gas-prices-aaa.R")'
-
-      - name: Run xml export script
-        run: Rscript -e 'source("scripts/xml_exports.R")'
+      - name: Run oil prices script
+        run: Rscript -e 'source("scripts/oil-prices.R")'
 
       - name: Commit & push if changed
         run: |
