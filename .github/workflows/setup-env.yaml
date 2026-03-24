@@ -25,8 +25,9 @@ jobs:
             any::xml2
             any::jsonlite
             any::stringr
-            any::rvest
             any::lubridate
             any::readr
+            any::httr2
+            any::jsonlite
             github::munichrocker/DatawRappr
           cache-version: 2
