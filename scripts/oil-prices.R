@@ -6,6 +6,9 @@ library(lubridate)
 library(readr)
 library(DatawRappr)
 
+library(httr2)
+library(jsonlite)
+
 # Load environment variables
 tryCatch(load_dot_env(), error = function(e) {}) 
 dw_api_key <- Sys.getenv("DW_API_KEY")
@@ -14,91 +17,86 @@ dw_api_key <- Sys.getenv("DW_API_KEY")
 datawrapper_auth(api_key = dw_api_key)
 
 
-url <- "https://gasprices.aaa.com/"
+#WTI
+WTI_url <- "https://advancedmedia.websol.barchart.com/proxies/timeseries/historical/queryeod.ashx?symbol=CLY00&data=dailynearest&maxrecords=1500&volume=total&order=asc&dividends=false&backadjust=false&daystoexpiration=1&contractroll=expiration"
 
-page <- read_html(url)
+WTI_resp <- request(WTI_url) |>
+  req_headers(
+    "User-Agent" = "Mozilla/5.0",
+    "Referer" = "https://oilprice.com/commodity-price-charts?page=chart&sym=CLY00"
+  ) |>
+  req_perform()
 
-# Get the date of the most recent price update
-prices_updated <- page %>% 
-  html_element(xpath = "/html/body/main/div[2]/div/div[1]/div/span") %>% 
-  html_text(trim = TRUE) %>% 
-  str_replace("Price as of", "")
+WTI_txt <- resp_body_string(WTI_resp)
 
-prices_updated_date <- mdy(prices_updated)
-prices_updated_date_pretty <- format(prices_updated_date, "%b %d, %Y")
+WTI_df <- read_csv(WTI_txt, col_names = FALSE) %>% 
+  select(X1, X2, X3) %>%
+  rename(type = X1,
+         date = X2,
+         price = X3) %>% 
+  mutate(type = "WTI")
 
-#national prices
-prices <- page %>% 
-  html_element(xpath = "//h1[contains(., 'National average gas prices')]/following::table[1]") %>% 
-  html_table(fill = TRUE) %>% 
-  janitor::clean_names() 
 
-national_prices <- prices %>%
-  mutate(Date = prices_updated_date) %>%
-  rename(Period = x,
-         Regular = regular,
-         `Mid-Grade` = mid_grade,
-         Premium = premium,
-         Diesel = diesel,
-         E85 = e85) %>% 
-  filter(Period == "Current Avg.") %>% 
-  select(Date, Regular, `Mid-Grade`, Premium, Diesel, E85) %>% 
-  mutate(Regular = as.numeric(str_replace(Regular, "\\$", "")),
-         `Mid-Grade` = as.numeric(str_replace(`Mid-Grade`, "\\$", "")),
-         Premium = as.numeric(str_replace(Premium, "\\$", "")),
-         Diesel = as.numeric(str_replace(Diesel, "\\$", "")),
-         E85 = as.numeric(str_replace(E85, "\\$", "")))
 
-#add today's prices to historical data 
-aaa_historical <- read.csv("data/aaa_historical_gas_prices.csv") %>% 
-  janitor::clean_names() %>%
+
+#Brent
+Brent_url <- "https://advancedmedia.websol.barchart.com/proxies/timeseries/historical/queryeod.ashx?symbol=CBY00&data=dailynearest&maxrecords=1500&volume=total&order=asc&dividends=false&backadjust=false&daystoexpiration=1&contractroll=expiration"
+
+Brent_resp <- request(Brent_url) |>
+  req_headers(
+    "User-Agent" = "Mozilla/5.0",
+    "Referer" = "https://oilprice.com/commodity-price-charts?page=chart&sym=CBY00"
+  ) |>
+  req_perform()
+
+Brent_txt <- resp_body_string(Brent_resp)
+
+Brent_df <- read_csv(Brent_txt, col_names = FALSE) %>% 
+  select(X1, X2, X3) %>%
+  rename(type = X1,
+         date = X2,
+         price = X3) %>% 
+  mutate(type = "Brent")
+
+
+WTI_Brent_df <- bind_rows(WTI_df, Brent_df) %>% 
+  pivot_wider(names_from = type, values_from = price) %>% 
   mutate(date = as.Date(date)) %>%
-  distinct(date, .keep_all = TRUE) %>%
-  filter(date != prices_updated_date) %>%
-  rename(Date = date,
-         Regular = regular,
-         `Mid-Grade` = mid_grade,
-         Premium = premium,
-         Diesel = diesel,
-         E85 = e85) %>% 
-  bind_rows(national_prices)
+  arrange(date) %>% 
+  filter(date >= "2021-01-01")
 
-write.csv(aaa_historical, "data/aaa_historical_gas_prices.csv", row.names = FALSE)
+max_date <- max(WTI_Brent_df$date)
+max_date_pretty <- format(max_date, "%b %d, %Y")
 
-historical_note <- paste0("As of ", prices_updated_date_pretty, ".")
 
-#5 year chart
-aaa_historical_5years <- aaa_historical %>% 
-  select(Date, Regular, Diesel) %>%
-  filter(Date >= (prices_updated_date - years(5)))
-write.csv(aaa_historical_5years, "data/aaa_historical_gas_prices_5years.csv", row.names = FALSE)
+WTI_Brent_5years <- WTI_Brent_df %>%
+  filter(date >= (max_date - years(5)))
+
+WTI_Brent_1year <- WTI_Brent_df %>%
+  filter(date >= (max_date - years(1)))
+
+WTI_Brent_30days <- WTI_Brent_df %>%
+  filter(date >= (max_date - 30))
+
+note <- paste0("Data through ", max_date_pretty, ". Represents daily nearest values.")
+
 
 # Upload data and publish 5 year chart
-dw_data_to_chart(aaa_historical_5years, chart_id = "VKUkr", api_key = dw_api_key)
-dw_edit_chart(chart_id = "VKUkr", annotate = historical_note, api_key = dw_api_key)
-dw_publish_chart(chart_id = "VKUkr", api_key = dw_api_key)
+dw_data_to_chart(WTI_Brent_5years, chart_id = "LAgII", api_key = dw_api_key)
+dw_edit_chart(chart_id = "LAgII", annotate = note, api_key = dw_api_key)
+dw_publish_chart(chart_id = "LAgII", api_key = dw_api_key)
 
 #1 year chart
-aaa_historical_1year <- aaa_historical %>% 
-  select(Date, Regular, Diesel) %>%
-  filter(Date >= (prices_updated_date - years(1)))
-write.csv(aaa_historical_1year, "data/aaa_historical_gas_prices_1year.csv", row.names = FALSE)
-
 # Upload data and publish 1 year chart
-dw_data_to_chart(aaa_historical_1year, chart_id = "FinjE", api_key = dw_api_key)
-dw_edit_chart(chart_id = "FinjE", annotate = historical_note, api_key = dw_api_key)
-dw_publish_chart(chart_id = "FinjE", api_key = dw_api_key)
+dw_data_to_chart(WTI_Brent_1year, chart_id = "reh4w", api_key = dw_api_key)
+dw_edit_chart(chart_id = "reh4w", annotate = note, api_key = dw_api_key)
+dw_publish_chart(chart_id = "reh4w", api_key = dw_api_key)
 
 #30 days chart
-aaa_historical_30days <- aaa_historical %>% 
-  select(Date, Regular, Diesel) %>%
-  filter(Date >= (prices_updated_date - 30))
-write.csv(aaa_historical_30days, "data/aaa_historical_gas_prices_30days.csv", row.names = FALSE)
-
 # Upload data and publish 30 days chart
-dw_data_to_chart(aaa_historical_30days, chart_id = "FveIx", api_key = dw_api_key)
-dw_edit_chart(chart_id = "FveIx", annotate = historical_note, api_key = dw_api_key)
-dw_publish_chart(chart_id = "FveIx", api_key = dw_api_key)
+dw_data_to_chart(WTI_Brent_30days, chart_id = "FrwMp", api_key = dw_api_key)
+dw_edit_chart(chart_id = "FrwMp", annotate = note, api_key = dw_api_key)
+dw_publish_chart(chart_id = "FrwMp", api_key = dw_api_key)
 
   
   
