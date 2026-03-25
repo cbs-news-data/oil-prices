@@ -101,4 +101,3 @@ dw_data_to_chart(WTI_Brent_30days, chart_id = "FrwMp", api_key = dw_api_key)
 dw_edit_chart(chart_id = "FrwMp", annotate = note, api_key = dw_api_key)
 dw_publish_chart(chart_id = "FrwMp", api_key = dw_api_key)
 
-  
