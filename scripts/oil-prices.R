@@ -81,7 +81,7 @@ write.csv(WTI_Brent_5years, "data/wti_brent_5years.csv", row.names = FALSE)
 write.csv(WTI_Brent_1year, "data/wti_brent_1year.csv", row.names = FALSE)
 write.csv(WTI_Brent_30days, "data/wti_brent_30days.csv", row.names = FALSE)
 
-note <- paste0("Data through ", max_date_pretty, ". Represents daily nearest values.")
+note <- paste0("Data through ", max_date_pretty, ". Represents settlement prices for oil futures.")
 
 
 # Upload data and publish 5 year chart
